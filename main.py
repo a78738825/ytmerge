@@ -1,22 +1,27 @@
 from pytubefix import YouTube
 from rich.console import Console
-
-# from rich.table import Table
-import pandas as pd
 from tabulate import tabulate
+import os
+import subprocess
 
 console = Console()
 
 
 def get_youtube_stream_info(link):
-    # todo :
-    # 1. add progress bar using on_progress_callback argument that can be given to streams object
+    """
+    🔍 Fetches video and audio stream info from the YouTube link.
 
+    Returns:
+    - yt object (for later stream retrieval)
+    - list of available video streams (dicts)
+    - list of available audio streams (dicts)
+    - video title
+    """
     yt = YouTube(link)
     streams = yt.streams
     title = yt.title
-    # caption = yt.captions
 
+    # 🎧 Filter audio-only streams
     audio_streams = streams.filter(only_audio=True)
     audiosObj = [
         {
@@ -28,6 +33,7 @@ def get_youtube_stream_info(link):
         for stream in audio_streams
     ]
 
+    # 🎥 Filter streams that have a resolution (i.e., video)
     videosObj = [
         {
             "itag": stream.itag,
@@ -44,10 +50,8 @@ def get_youtube_stream_info(link):
 
 def display_streams(videos, audios):
     """
-    Prints a formatted table of available video and audio streams.
-    Does not return anything.
+    🧾 Prints available video & audio stream options in fancy tables.
     """
-
     print("🎥 Video Streams:")
     print(tabulate(videos, headers="keys", tablefmt="fancy_grid"))
 
@@ -55,7 +59,11 @@ def display_streams(videos, audios):
     print(tabulate(audios, headers="keys", tablefmt="fancy_grid"))
 
 
-def select_stream(yt, video_itag, audio_itag):
+def select_stream(yt, *_):
+    """
+    🎯 Prompts user to select desired itags for video & audio.
+    Fetches corresponding stream objects and returns them.
+    """
     video_itag = console.input(
         "[bold cyan]Enter the itag of the video quality you want to download:[/bold cyan] "
     )
@@ -69,43 +77,47 @@ def select_stream(yt, video_itag, audio_itag):
     return video_stream, audio_stream
 
 
-import os
-
-
 def download_streams(video_stream, audio_stream):
+    """
+    ⬇️ Downloads the selected video and audio streams.
+    🧠 Determines file extensions automatically from MIME types.
+    📦 Returns paths to the downloaded files.
+    """
     console.print("\n[bold green]Downloading streams...[/bold green]")
 
-    # 🔍 Get file extensions from MIME types (e.g. "video/mp4" -> "mp4")
+    # 🔍 Extract file extensions (e.g., mp4, webm)
     video_ext = video_stream.mime_type.split("/")[1]
     audio_ext = audio_stream.mime_type.split("/")[1]
 
-    # 📝 Define temp filenames with correct extensions
+    # 📝 Define temp filenames using actual extensions
     video_path = f"temp_video.{video_ext}"
     audio_path = f"temp_audio.{audio_ext}"
 
-    # 📢 Show user the formats being downloaded
+    # 👀 Show the formats being downloaded
     console.print(
         f"Video format: .{video_ext}, Audio format: .{audio_ext}", style="dim"
     )
 
-    # 📥 Download the streams to temp files
+    # 🚀 Perform downloads
     video_stream.download(filename=video_path)
     audio_stream.download(filename=audio_path)
 
-    # 🔙 Return the paths for further processing (like merging)
     return video_path, audio_path
 
 
-import subprocess
-
-
 def merge_streams(video_path, audio_path, title):
+    """
+    🎞️ Merges the video and audio files using ffmpeg.
+    🧼 Sanitizes title for the final filename.
+    ✅ Returns success status.
+    """
     console.print("[bold yellow]Merging video and audio...[/bold yellow]")
 
-    # sanitize title for file name
+    # 🧼 Sanitize the title to create a safe filename
     safe_title = "".join(c for c in title if c.isalnum() or c in " _-").rstrip()
     output_path = f"{safe_title}.mp4"
 
+    # 🛠️ ffmpeg command to merge video & audio
     command = [
         "ffmpeg",
         "-i",
@@ -119,9 +131,10 @@ def merge_streams(video_path, audio_path, title):
         "-strict",
         "experimental",
         output_path,
-        "-y",  # overwrite without asking
+        "-y",  # overwrite output file without asking
     ]
 
+    # 🧪 Run ffmpeg
     result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
     if result.returncode == 0:
@@ -136,29 +149,41 @@ def merge_streams(video_path, audio_path, title):
 
 
 def cleanup(*files):
+    """
+    🧹 Deletes temporary files (e.g., downloaded video/audio).
+    """
     for file in files:
         if os.path.exists(file):
             os.remove(file)
             console.print(f"[dim]Deleted temp file: {file}[/dim]")
 
 
+# 🧠 Main program
 if __name__ == "__main__":
+    # 🔗 Ask user for the YouTube link
     link = console.input("Enter the YouTube video URL: ")
 
-    # Get available streams
+    # 📡 Fetch available streams and video title
     yt, videos, audios, title = get_youtube_stream_info(link)
 
-    # Display title
+    # 🖼️ Show title
     console.print(f"Title: {title}", style="bold green")
 
     if videos and audios:
+        # 📊 Show available streams
         display_streams(videos, audios)
+
+        # 🎯 Prompt user for selections
         video_stream, audio_stream = select_stream(yt, videos, audios)
 
+        # ⬇️ Download and 🎞️ Merge
         video_path, audio_path = download_streams(video_stream, audio_stream)
         success = merge_streams(video_path, audio_path, title)
 
+        # 🧹 Cleanup temp files if all good
         if success:
             cleanup(video_path, audio_path)
     else:
-        print("⚠️  Couldn’t find video or audio streams for this link.")
+        console.print(
+            "⚠️  Couldn’t find video or audio streams for this link.", style="bold red"
+        )
