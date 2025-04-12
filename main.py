@@ -1,10 +1,22 @@
 from pytubefix import YouTube
 from rich.console import Console
+from rich.progress import Progress, BarColumn, DownloadColumn, TextColumn, TimeRemainingColumn, TransferSpeedColumn
 from tabulate import tabulate
 import os
 import subprocess
 
 console = Console()
+
+progress_bar = None
+progress_task = None
+
+def on_progress(stream, chunk, bytes_remaining):
+    global progress_bar, progress_task
+    total_size = stream.filesize
+    bytes_downloaded = total_size - bytes_remaining
+
+    if progress_bar and progress_task:
+        progress_bar.update(progress_task, completed=bytes_downloaded)
 
 
 def get_youtube_stream_info(link):
@@ -17,7 +29,7 @@ def get_youtube_stream_info(link):
     - list of available audio streams (dicts)
     - video title
     """
-    yt = YouTube(link)
+    yt = YouTube(link, on_progress_callback=on_progress)
     streams = yt.streams
     title = yt.title
 
@@ -99,8 +111,24 @@ def download_streams(video_stream, audio_stream):
     )
 
     # 🚀 Perform downloads
-    video_stream.download(filename=video_path)
-    audio_stream.download(filename=audio_path)
+    global progress_bar, progress_task
+
+    with Progress(
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        DownloadColumn(),
+        TransferSpeedColumn(),
+        TimeRemainingColumn(),
+    ) as progress:
+        progress_bar = progress
+
+        # Download video
+        progress_task = progress.add_task("[cyan]Downloading video...", total=video_stream.filesize)
+        video_stream.download(filename=video_path)
+
+        # Download audio
+        progress_task = progress.add_task("[magenta]Downloading audio...", total=audio_stream.filesize)
+        audio_stream.download(filename=audio_path)
 
     return video_path, audio_path
 
