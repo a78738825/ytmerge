@@ -1,14 +1,25 @@
 from pytubefix import YouTube
 from rich.console import Console
-from rich.progress import Progress, BarColumn, DownloadColumn, TextColumn, TimeRemainingColumn, TransferSpeedColumn
 from tabulate import tabulate
 import os
 import subprocess
 
 console = Console()
 
+from rich.progress import (
+    Progress,
+    BarColumn,
+    DownloadColumn,
+    TextColumn,
+    TimeRemainingColumn,
+    TransferSpeedColumn,
+    SpinnerColumn,
+)
+
+# Shared objects for tracking progress
 progress_bar = None
 progress_task = None
+
 
 def on_progress(stream, chunk, bytes_remaining):
     global progress_bar, progress_task
@@ -95,7 +106,9 @@ def download_streams(video_stream, audio_stream):
     🧠 Determines file extensions automatically from MIME types.
     📦 Returns paths to the downloaded files.
     """
-    console.print("\n[bold green]Downloading streams...[/bold green]")
+    console.print(
+        "\n[bold green]📥 Starting download of selected streams...[/bold green]"
+    )
 
     # 🔍 Extract file extensions (e.g., mp4, webm)
     video_ext = video_stream.mime_type.split("/")[1]
@@ -113,22 +126,32 @@ def download_streams(video_stream, audio_stream):
     # 🚀 Perform downloads
     global progress_bar, progress_task
 
+    # Setup the pretty progress bar
     with Progress(
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
+        SpinnerColumn(style="bold blue"),
+        TextColumn("[bold white]{task.description}"),
+        BarColumn(bar_width=None),
         DownloadColumn(),
         TransferSpeedColumn(),
         TimeRemainingColumn(),
+        console=console,
+        transient=True,  # Clear after done
     ) as progress:
         progress_bar = progress
 
-        # Download video
-        progress_task = progress.add_task("[cyan]Downloading video...", total=video_stream.filesize)
+        # 🎥 Download video
+        progress_task = progress.add_task(
+            "🎥 Downloading video...", total=video_stream.filesize
+        )
         video_stream.download(filename=video_path)
 
-        # Download audio
-        progress_task = progress.add_task("[magenta]Downloading audio...", total=audio_stream.filesize)
+        # 🎵 Download audio
+        progress_task = progress.add_task(
+            "🎵 Downloading audio...", total=audio_stream.filesize
+        )
         audio_stream.download(filename=audio_path)
+
+    console.print("[bold green]✅ Download complete![/bold green]\n")
 
     return video_path, audio_path
 
