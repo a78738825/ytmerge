@@ -3,9 +3,6 @@ from rich.console import Console
 from tabulate import tabulate
 import os
 import subprocess
-
-console = Console()
-
 from rich.progress import (
     Progress,
     BarColumn,
@@ -16,18 +13,7 @@ from rich.progress import (
     SpinnerColumn,
 )
 
-# Shared objects for tracking progress
-progress_bar = None
-progress_task = None
-
-
-def on_progress(stream, chunk, bytes_remaining):
-    global progress_bar, progress_task
-    total_size = stream.filesize
-    bytes_downloaded = total_size - bytes_remaining
-
-    if progress_bar and progress_task:
-        progress_bar.update(progress_task, completed=bytes_downloaded)
+console = Console()
 
 
 def get_youtube_stream_info(link):
@@ -40,7 +26,7 @@ def get_youtube_stream_info(link):
     - list of available audio streams (dicts)
     - video title
     """
-    yt = YouTube(link, on_progress_callback=on_progress)
+    yt = YouTube(link)
     streams = yt.streams
     title = yt.title
 
@@ -103,7 +89,7 @@ def select_stream(yt, *_):
 def download_streams(video_stream, audio_stream):
     """
     ⬇️ Downloads the selected video and audio streams.
-    🧠 Determines file extensions automatically from MIME types.
+    🧠 Uses rich progress bars and dynamically handles MIME-based extensions.
     📦 Returns paths to the downloaded files.
     """
     console.print(
@@ -111,45 +97,71 @@ def download_streams(video_stream, audio_stream):
     )
 
     # 🔍 Extract file extensions (e.g., mp4, webm)
-    video_ext = video_stream.mime_type.split("/")[1]
-    audio_ext = audio_stream.mime_type.split("/")[1]
+    video_ext = video_stream.mime_type.split("/")[-1]
+    audio_ext = audio_stream.mime_type.split("/")[-1]
 
     # 📝 Define temp filenames using actual extensions
     video_path = f"temp_video.{video_ext}"
     audio_path = f"temp_audio.{audio_ext}"
 
     # 👀 Show the formats being downloaded
-    console.print(
-        f"Video format: .{video_ext}, Audio format: .{audio_ext}", style="dim"
-    )
+    console.print(f"[dim]Video format: .{video_ext}, Audio format: .{audio_ext}[/dim]")
 
-    # 🚀 Perform downloads
-    global progress_bar, progress_task
-
-    # Setup the pretty progress bar
+    # Download video with separate progress bar
     with Progress(
-        SpinnerColumn(style="bold blue"),
+        SpinnerColumn(style="bold cyan"),
         TextColumn("[bold white]{task.description}"),
         BarColumn(bar_width=None),
         DownloadColumn(),
         TransferSpeedColumn(),
         TimeRemainingColumn(),
         console=console,
-        transient=True,  # Clear after done
+        transient=True,
     ) as progress:
-        progress_bar = progress
-
-        # 🎥 Download video
-        progress_task = progress.add_task(
+        task_id = progress.add_task(
             "🎥 Downloading video...", total=video_stream.filesize
         )
-        video_stream.download(filename=video_path)
 
-        # 🎵 Download audio
-        progress_task = progress.add_task(
+        def video_progress(stream, chunk, bytes_remaining):
+            downloaded = stream.filesize - bytes_remaining
+            progress.update(task_id, completed=downloaded)
+
+        # Attach callback and download
+        if not os.path.exists(video_path):
+            yt.register_on_progress_callback(video_progress)
+            yt.streams.get_by_itag(video_stream.itag).download(filename=video_path)
+        else:
+            console.print(
+                f"[yellow]⚠️ Skipping video download, file already exists: {video_path}[/yellow]"
+            )
+
+    # Download audio with a new progress bar
+    with Progress(
+        SpinnerColumn(style="bold magenta"),
+        TextColumn("[bold white]{task.description}"),
+        BarColumn(bar_width=None),
+        DownloadColumn(),
+        TransferSpeedColumn(),
+        TimeRemainingColumn(),
+        console=console,
+        transient=True,
+    ) as progress:
+        task_id = progress.add_task(
             "🎵 Downloading audio...", total=audio_stream.filesize
         )
-        audio_stream.download(filename=audio_path)
+
+        def audio_progress(stream, chunk, bytes_remaining):
+            downloaded = stream.filesize - bytes_remaining
+            progress.update(task_id, completed=downloaded)
+
+        # Attach callback and download
+        if not os.path.exists(audio_path):
+            yt.register_on_progress_callback(audio_progress)
+            yt.streams.get_by_itag(audio_stream.itag).download(filename=audio_path)
+        else:
+            console.print(
+                f"[yellow]⚠️ Skipping audio download, file already exists: {audio_path}[/yellow]"
+            )
 
     console.print("[bold green]✅ Download complete![/bold green]\n")
 
