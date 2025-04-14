@@ -3,6 +3,7 @@ from rich.console import Console
 from tabulate import tabulate
 import os
 import subprocess
+import re
 from rich.progress import (
     Progress,
     BarColumn,
@@ -168,6 +169,32 @@ def download_streams(video_stream, audio_stream):
     return video_path, audio_path
 
 
+def get_duration(path):
+    """Return duration of a media file in seconds using ffprobe."""
+    import subprocess
+    import json
+
+    result = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "json",
+            path,
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    try:
+        return float(json.loads(result.stdout)["format"]["duration"])
+    except:
+        return None
+
+
 def merge_streams(video_path, audio_path, title):
     """
     🎞️ Merges the video and audio files using ffmpeg.
@@ -179,6 +206,13 @@ def merge_streams(video_path, audio_path, title):
     # 🧼 Sanitize the title to create a safe filename
     safe_title = "".join(c for c in title if c.isalnum() or c in " _-").rstrip()
     output_path = f"{safe_title}.mp4"
+
+    total_duration = get_duration(video_path)
+    if not total_duration:
+        console.print(
+            "[bold red]⚠ Could not determine duration for merge progress bar.[/bold red]"
+        )
+        total_duration = 100  # Fallback
 
     # 🛠️ ffmpeg command to merge video & audio
     command = [
@@ -193,21 +227,49 @@ def merge_streams(video_path, audio_path, title):
         "aac",
         "-strict",
         "experimental",
-        output_path,
         "-y",  # overwrite output file without asking
+        "-progress",
+        "-",  # Enable live progress output to stdout
+        output_path,
     ]
 
-    # 🧪 Run ffmpeg
-    result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    # 🧪Progress Bar
+    with Progress(
+        SpinnerColumn(style="bold green"),
+        TextColumn("[bold white]{task.description}"),
+        BarColumn(bar_width=None),
+        "[progress.percentage]{task.percentage:>3.0f}%",
+        TimeRemainingColumn(),
+        console=console,
+        transient=True,
+    ) as progress:
+        task_id = progress.add_task("🔧 Merging...", total=total_duration)
 
-    if result.returncode == 0:
+        process = subprocess.Popen(
+            command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True
+        )
+        if process.stdout is not None:
+            for line in process.stdout:
+                if "out_time_ms=" in line:
+                    match = re.search(r"out_time_ms=(\d+)", line)
+                    if match:
+                        current_ms = int(match.group(1))
+                        current_sec = current_ms / 1_000_000
+                        progress.update(task_id, completed=current_sec)
+        else:
+            console.print(
+                "[bold red]⚠ ffmpeg did not return a readable stdout stream.[/bold red]"
+            )
+
+        process.wait()
+
+    if process.returncode == 0:
         console.print(
             f"[bold green]✅ Merge complete! Saved as [underline]{output_path}[/underline][/bold green]"
         )
         return True
     else:
         console.print("[bold red]❌ Merge failed![/bold red]")
-        console.print(result.stderr.decode())
         return False
 
 
