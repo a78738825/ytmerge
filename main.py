@@ -4,6 +4,8 @@ from tabulate import tabulate
 import os
 import subprocess
 import re
+import argparse
+import sys
 from rich.progress import (
     Progress,
     BarColumn,
@@ -128,9 +130,12 @@ def download_streams(video_stream, audio_stream):
             progress.update(task_id, completed=downloaded)
 
         # Attach callback and download
-        if not os.path.exists(video_path):
+        video = yt.streams.get_by_itag(video_stream.itag)
+        if (
+            not os.path.exists(video_path) and video is not None
+        ):  # 🧠 Skip download if file already exists AND if the stream itag is valid
             yt.register_on_progress_callback(video_progress)
-            yt.streams.get_by_itag(video_stream.itag).download(filename=video_path)
+            video.download(filename=video_path)
         else:
             console.print(
                 f"[yellow]⚠️ Skipping video download, file already exists: {video_path}[/yellow]"
@@ -156,9 +161,12 @@ def download_streams(video_stream, audio_stream):
             progress.update(task_id, completed=downloaded)
 
         # Attach callback and download
-        if not os.path.exists(audio_path):
+        audio = yt.streams.get_by_itag(audio_stream.itag)
+        if (
+            not os.path.exists(audio_path) and audio is not None
+        ):  # 🧠 Skip download if file already exists AND if the stream itag is valid
             yt.register_on_progress_callback(audio_progress)
-            yt.streams.get_by_itag(audio_stream.itag).download(filename=audio_path)
+            audio.download(filename=audio_path)
         else:
             console.print(
                 f"[yellow]⚠️ Skipping audio download, file already exists: {audio_path}[/yellow]"
@@ -191,7 +199,7 @@ def get_duration(path):
 
     try:
         return float(json.loads(result.stdout)["format"]["duration"])
-    except:
+    except Exception:
         return None
 
 
@@ -283,18 +291,32 @@ def cleanup(*files):
             console.print(f"[dim]Deleted temp file: {file}[/dim]")
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="🎬 YouTube downloader with stream selection, merging, and rich progress bars."
+    )
+    parser.add_argument("url", help="YouTube video URL")
+    return parser.parse_args()
+
+
 # 🧠 Main program
 if __name__ == "__main__":
-    # 🔗 Ask user for the YouTube link
-    link = console.input("Enter the YouTube video URL: ")
+    args = parse_args()
 
-    # 📡 Fetch available streams and video title
-    yt, videos, audios, title = get_youtube_stream_info(link)
+    try:
+        # 🔗 Ask user for the YouTube link
+        link = args.url
 
-    # 🖼️ Show title
-    console.print(f"Title: {title}", style="bold green")
+        # 📡 Fetch available streams and video title
+        yt, videos, audios, title = get_youtube_stream_info(link)
 
-    if videos and audios:
+        # 🖼️ Show title
+        console.print(f"Title: {title}", style="bold green")
+
+        if not videos or not audios:
+            console.print("[bold red]❌ No streams found.[/bold red]")
+            sys.exit(1)
+
         # 📊 Show available streams
         display_streams(videos, audios)
 
@@ -308,7 +330,18 @@ if __name__ == "__main__":
         # 🧹 Cleanup temp files if all good
         if success:
             cleanup(video_path, audio_path)
-    else:
+
+    except KeyboardInterrupt:
+        # Gracefully handle Ctrl+C
+        # Show exit message, clean up temp files if any exist
+        # Ignore cleanup errors and exit with code 1 (user interruption)
+
         console.print(
-            "⚠️  Couldn’t find video or audio streams for this link.", style="bold red"
+            "\n[bold red]⛔ Interrupted by user. Exiting safely...[/bold red]"
         )
+        try:
+            # Try cleaning up temp files — if they exist
+            cleanup("temp_video.mp4", "temp_audio.mp4")
+        except Exception:
+            pass  # Ignore errors like missing files or permission issues
+        sys.exit(1)
