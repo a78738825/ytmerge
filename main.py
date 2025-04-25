@@ -215,7 +215,18 @@ def merge_streams(video_path, audio_path, title):
 
     # 🧼 Sanitize the title to create a safe filename
     safe_title = "".join(c for c in title if c.isalnum() or c in " _-").rstrip()
-    output_path = f"{safe_title}.mp4"
+
+    # If Both the audio and video are webm format merge them to webm too; otherwise into mp4
+    video_ext = os.path.splitext(video_path)[1]
+    audio_ext = os.path.splitext(audio_path)[1]
+    if video_ext == ".webm" and audio_ext == ".webm":
+        output_ext = ".webm"
+        copy_both = True
+    else:
+        output_ext = ".mp4"
+        copy_both = False
+
+    output_path = f"{safe_title}{output_ext}"
 
     total_duration = get_duration(video_path)
     if not total_duration:
@@ -231,12 +242,17 @@ def merge_streams(video_path, audio_path, title):
         video_path,
         "-i",
         audio_path,
+        # 🧠 Use stream copy for video — always copy since we don't re-encode video
         "-c:v",
         "copy",
+        # 🎵 Use stream copy for audio *only if both streams are .webm*
+        # Otherwise, re-encode audio to AAC (for compatibility with .mp4)
         "-c:a",
-        "aac",
-        "-strict",
-        "experimental",
+        "copy" if copy_both else "aac",
+        # 🎚️ Set audio bitrate only if we’re encoding to AAC (not copying)
+        # If we’re copying audio, bitrate doesn’t apply — so we return None (to skip it later)
+        "-b:a",
+        "192k" if not copy_both else None,
         "-y",  # overwrite output file without asking
         "-progress",
         "-",  # Enable live progress output to stdout
