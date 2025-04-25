@@ -1,12 +1,13 @@
-# 🎬 YouTube Downloader CLI (with Stream Selector & Merger)
+# 🎬 YouTube Downloader CLI (with Stream Selector & Smart Merger)
 
 A Python-based CLI tool that lets you:
 
 ✅ Fetch available video & audio streams from a YouTube link  
 ✅ Choose the quality you want using `itag` values  
-✅ Download both streams  
-✅ Merge them into a single `.mp4` file using `ffmpeg`  
-✅ Clean up temp files after a successful merge
+✅ Download both streams with progress bars  
+✅ Merge them into a `.mp4` or `.webm` file using `ffmpeg` (auto-chosen format)  
+✅ Automatically skips re-downloading if files already exist  
+✅ Cleans up temp files after a successful merge
 
 ---
 
@@ -14,8 +15,11 @@ A Python-based CLI tool that lets you:
 
 - 🎥 Lists all available video & audio streams (with itags, resolutions, and formats)
 - 🎛️ Lets you pick the exact quality of video/audio you want to download
-- 📥 Downloads and merges streams using `ffmpeg`
-- 🧹 Deletes temporary files after merging is complete
+- 📥 Downloads streams and intelligently merges them using `ffmpeg`
+  - Uses stream-copy for `.webm` to avoid re-encoding
+  - Re-encodes audio only if necessary
+- ⏳ Rich CLI progress bars for video/audio downloads and merge steps
+- 🧹 Skips re-downloads for existing temp files and cleans up after merge
 - 🖤 Uses `rich` and `tabulate` for clean, readable CLI output
 
 ---
@@ -37,25 +41,26 @@ pip install pytubefix rich tabulate
 ## 🔧 Usage
 
 ```bash
-python main.py
+python main.py <YouTube_URL>
 ```
 
-You’ll be prompted to:
+You’ll be guided to:
 
-1. Paste a YouTube video URL 📎
-2. View the list of available streams 🧩
-3. Select the `itag` for the video 🎥
-4. Select the `itag` for the audio 🎵
-5. Watch it download, merge and save! 💾
+1. View the list of available streams 🧩  
+2. Select the `itag` for the video 🎥  
+3. Select the `itag` for the audio 🎵  
+4. Watch it download, merge, and save! 💾
 
 ---
 
 ## 📁 Output
 
 - Final merged video will be saved as:  
-  `"<video-title>.mp4"` (automatically sanitized to be filename-safe)
+  `"<video-title>.mp4"` or `"<video-title>.webm"`  
+  (chosen based on input stream formats, sanitized to be filename-safe)
 
-- Temporary files (`temp_video.*` and `temp_audio.*`) are deleted after merge.
+- Temporary files (`temp_video.*` and `temp_audio.*`) are deleted after merge  
+  unless the merge fails or you interrupt with `Ctrl+C`.
 
 ---
 
@@ -63,7 +68,8 @@ You’ll be prompted to:
 
 - Make sure `ffmpeg` is correctly installed — it’s essential for merging.
 - Uses `pytubefix` to avoid issues with the original `pytube` package.
-- Not all streams are compatible; in rare cases, merging might fail if formats are too exotic.
+- If both streams are `.webm`, merging will use stream-copy for better quality and speed.
+- Graceful handling of errors and keyboard interrupts.
 
 ---
 
@@ -74,7 +80,7 @@ You’ll be prompted to:
 #### 🎯 Core Features
 
 - [ ] Add **audio-only download** option 🎵
-- [ ] Show **download progress bar** using `on_progress_callback` and `rich.progress` ⏳
+- [x] Show **download progress bar** using `on_progress_callback` and `rich.progress` ⏳
 - [ ] Let user **choose output filename** or auto-append quality info 📝
 - [ ] Add option to **auto-select best quality** (highest res + best audio) 🏆
 - [ ] Support for **batch downloading** from multiple URLs 📦
@@ -132,4 +138,5 @@ MIT – use it, share it, break it, build on it.
 
 ---
 
-Made with ☕, Python, and lots of debug prints.
+Made with ☕, Python, and a love for clean CLI tools.
+
