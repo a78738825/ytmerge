@@ -1,6 +1,8 @@
 from pytubefix import YouTube
 from rich.console import Console
 from tabulate import tabulate
+from pytubefix.exceptions import PytubeFixError
+from urllib.error import URLError
 import os
 import subprocess
 import re
@@ -308,7 +310,13 @@ if __name__ == "__main__":
         link = args.url
 
         # 📡 Fetch available streams and video title
-        yt, videos, audios, title = get_youtube_stream_info(link)
+        try:
+            yt, videos, audios, title = get_youtube_stream_info(link)
+        except (PytubeFixError, URLError, ConnectionError) as retrieval_error:
+            console.print(
+                f"[bold red]📡 Network or retrieval error:[/bold red] {str(retrieval_error)}"
+            )
+            sys.exit(1)
 
         # 🖼️ Show title
         console.print(f"Title: {title}", style="bold green")
@@ -323,13 +331,25 @@ if __name__ == "__main__":
         # 🎯 Prompt user for selections
         video_stream, audio_stream = select_stream(yt, videos, audios)
 
-        # ⬇️ Download and 🎞️ Merge
-        video_path, audio_path = download_streams(video_stream, audio_stream)
+        # ⬇️ Download
+        try:
+            video_path, audio_path = download_streams(video_stream, audio_stream)
+        except Exception as download_error:
+            console.print(
+                f"[bold red]💾 Download error:[/bold red] {str(download_error)}"
+            )
+            sys.exit(1)
+
+        # 🎞️ Merge
         success = merge_streams(video_path, audio_path, title)
 
         # 🧹 Cleanup temp files if all good
-        if success:
-            cleanup(video_path, audio_path)
+        try:
+            if success:
+                cleanup(video_path, audio_path)
+        except Exception as ffmpeg_error:
+            console.print(f"[bold red]🎞️ Merge error:[/bold red] {str(ffmpeg_error)}")
+            sys.exit(1)
 
     except KeyboardInterrupt:
         # Gracefully handle Ctrl+C
