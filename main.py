@@ -249,13 +249,21 @@ def merge_streams(video_path, audio_path, title):
         # Otherwise, re-encode audio to AAC (for compatibility with .mp4)
         "-c:a",
         "copy" if copy_both else "aac",
-        # 🎚️ Set audio bitrate only if we’re encoding to AAC (not copying)
-        # If we’re copying audio, bitrate doesn’t apply — so we return None (to skip it later)
-        "-b:a",
-        "192k" if not copy_both else None,
-        "-y",  # overwrite output file without asking
+    ]
+
+    # 🎚️ Only set audio bitrate if re-encoding (AAC)
+    if not copy_both:
+        command += ["-b:a", "192k"]  # Skipping this avoids errors with stream copy
+
+    # ⏱️ Stop encoding when the shorter stream ends (helps avoid desync)
+    # 📢 Overwrite output file if it exists
+    # 📊 Enable ffmpeg progress output to stdout
+    # 🧾 Output file path (webm or mp4 depending on codec match)
+    command += [
+        "-shortest",
+        "-y",
         "-progress",
-        "-",  # Enable live progress output to stdout
+        "-",
         output_path,
     ]
 
@@ -272,7 +280,7 @@ def merge_streams(video_path, audio_path, title):
         task_id = progress.add_task("🔧 Merging...", total=total_duration)
 
         process = subprocess.Popen(
-            command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True
+            command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
         )
         if process.stdout is not None:
             for line in process.stdout:
@@ -357,10 +365,9 @@ if __name__ == "__main__":
             sys.exit(1)
 
         # 🎞️ Merge
-        success = merge_streams(video_path, audio_path, title)
-
-        # 🧹 Cleanup temp files if all good
         try:
+            success = merge_streams(video_path, audio_path, title)
+            # 🧹 Cleanup temp files if all good
             if success:
                 cleanup(video_path, audio_path)
         except Exception as ffmpeg_error:
