@@ -43,6 +43,9 @@ def get_youtube_stream_info(link):
             "type": stream.type,
             "mime_type": stream.mime_type,
             "quality": stream.abr,
+            # "filesize": Convert the stream's file size from bytes to megabytes by dividing by 1024 twice (bytes → KB → MB),
+            # then convert to string, slice to keep only the first 5 characters for brevity (e.g., "3.57 "), and append " MB"
+            "filesize": str(stream.filesize / 1024 / 1024)[:5] + " MB",
         }
         for stream in audio_streams
     ]
@@ -54,6 +57,9 @@ def get_youtube_stream_info(link):
             "resolution": stream.resolution,
             "type": stream.type,
             "mime_type": stream.mime_type,
+            # "filesize": Convert the stream's file size from bytes to megabytes by dividing by 1024 twice (bytes → KB → MB),
+            # then convert to string, slice to keep only the first 5 characters for brevity (e.g., "3.57 "), and append " MB"
+            "filesize": str(stream.filesize / 1024 / 1024)[:5] + " MB",
         }
         for stream in streams
         if stream.resolution is not None
@@ -211,6 +217,7 @@ def merge_streams(video_path, audio_path, title):
     🧼 Sanitizes title for the final filename.
     ✅ Returns success status.
     """
+    # TODO - Make it so that if the extensions of both audio and video are matched, there is no re-encoding [like i did for webm]
     console.print("[bold yellow]Merging video and audio...[/bold yellow]")
 
     # 🧼 Sanitize the title to create a safe filename
@@ -304,6 +311,13 @@ def merge_streams(video_path, audio_path, title):
         return True
     else:
         console.print("[bold red]❌ Merge failed![/bold red]")
+        # Debug ffmpeg merging errors
+        # if process.stderr:
+        #     error_output = process.stderr.read()
+        #     console.print(f"[red]{error_output}[/red]")
+        # else:
+        #     console.print("[dim]No error message captured from ffmpeg.[/dim]")
+        # Debug ends
         return False
 
 
