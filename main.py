@@ -1,9 +1,9 @@
-from .streams import get_youtube_stream_info, display_streams, select_stream
-from .downloader import download_streams
-from .merger import merge_streams
+from streams import get_youtube_stream_info, display_streams, select_stream
+from downloader import download_streams
+from merger import merge_streams
 
-from .cli import parse_args
-from .utils import cleanup
+from cli import parse_args
+from utils import cleanup
 
 from rich.console import Console
 from pytubefix.exceptions import PytubeFixError
