@@ -1,15 +1,16 @@
-from streams import get_youtube_stream_info, display_streams, select_stream
-from downloader import download_streams
-from merger import merge_streams
+import os
+import sys
+from urllib.error import URLError
+
+from pytubefix.exceptions import PytubeFixError
+from rich.console import Console
 
 from cli import parse_args
-from utils import cleanup
+from downloader import download_streams
 from logger import logger
-
-from rich.console import Console
-from pytubefix.exceptions import PytubeFixError
-from urllib.error import URLError
-import sys
+from merger import merge_streams
+from streams import StreamSelector
+from utils import cleanup
 
 console = Console()
 
@@ -23,8 +24,9 @@ if __name__ == "__main__":
 
         # 📡 Fetch available streams and video title
         try:
-            yt, videos, audios, title = get_youtube_stream_info(link)
-            logger.info(f"Fetched Youtube Video: {title} => [ {link} ]")
+            # 🎛️ Initialize stream stream_handler (handles fetching info + user selection)
+            stream_handler = StreamSelector(link)
+            logger.info(f"Fetched Youtube Video: {stream_handler.title} => [ {link} ]")
         except (PytubeFixError, URLError, ConnectionError) as retrieval_error:
             console.print(
                 f"[bold red]📡 Network or retrieval error:[/bold red] {str(retrieval_error)}"
@@ -32,38 +34,46 @@ if __name__ == "__main__":
             sys.exit(1)
 
         # 🖼️ Show title
-        console.print(f"Title: {title}", style="bold green")
+        console.rule("[bold blue] Video Information [/bold blue]")
+        console.print(f"Title: {stream_handler.title}", style="bold green")
+        print("\n")
 
-        if not videos or not audios:
+        if not stream_handler.videos and not stream_handler.audios:
             console.print("[bold red]❌ No streams found.[/bold red]")
             sys.exit(1)
 
         # 📊 Show available streams
-        display_streams(videos, audios)
+        stream_handler.display_streams(audio_only=args.audio_only)
 
-        # 🎯 Prompt user for selections
-        video_stream, audio_stream = select_stream(yt, videos, audios)
-        logger.info(
-            "User selected video itag: %s (%s, %s)",
-            video_stream.itag,
-            video_stream.resolution,
-            video_stream.mime_type,
+        # 🎯 Prompt user for selections (audio-only or both video+audio)
+        video_stream, audio_stream = stream_handler.select_streams(
+            audio_only=args.audio_only
         )
-        logger.info(
-            "User selected audio itag: %s (%s, %s)",
-            audio_stream.itag,
-            audio_stream.abr,
-            audio_stream.mime_type,
-        )
-        logger.info(
-            "Video size: %.2f MB, Audio size: %.2f MB",
-            video_stream.filesize / 1024 / 1024,
-            audio_stream.filesize / 1024 / 1024,
-        )
+
+        # 🧾 Log selections
+        if video_stream:
+            logger.info(
+                "User selected video itag: %s (%s, %s)",
+                video_stream.itag,
+                video_stream.resolution,
+                video_stream.mime_type,
+            )
+            logger.info("Video size: %.2f MB", video_stream.filesize / 1024 / 1024)
+
+        if audio_stream:
+            logger.info(
+                "User selected audio itag: %s (%s, %s)",
+                audio_stream.itag,
+                audio_stream.abr,
+                audio_stream.mime_type,
+            )
+            logger.info("Audio size: %.2f MB", audio_stream.filesize / 1024 / 1024)
 
         # ⬇️ Download
         try:
-            video_path, audio_path = download_streams(video_stream, audio_stream, yt)
+            video_path, audio_path = download_streams(
+                video_stream, audio_stream, stream_handler.yt
+            )
         except Exception as download_error:
             console.print(
                 f"[bold red]💾 Download error:[/bold red] {str(download_error)}"
@@ -71,16 +81,41 @@ if __name__ == "__main__":
             sys.exit(1)
 
         # 🎞️ Merge
-        try:
-            success = merge_streams(video_path, audio_path, title)
-            # 🧹 Cleanup temp files if all good
-            if success:
-                cleanup(video_path, audio_path)
-                logger.info("✅ Merge successful: %s", title)
-        except Exception as ffmpeg_error:
-            logger.error("❌ Merge failed: %s", title)
-            console.print(f"[bold red]🎞️ Merge error:[/bold red] {str(ffmpeg_error)}")
-            sys.exit(1)
+        if video_stream:
+            try:
+                success = merge_streams(video_path, audio_path, stream_handler.title)
+                # 🧹 Cleanup temp files if all good
+                if success:
+                    cleanup(video_path, audio_path)
+                    logger.info("✅ Merge successful: %s", stream_handler.title)
+            except Exception as ffmpeg_error:
+                logger.error("❌ Merge failed: %s", stream_handler.title)
+                console.print(
+                    f"[bold red]🎞️ Merge error:[/bold red] {str(ffmpeg_error)}"
+                )
+                sys.exit(1)
+        else:
+            # 🎧 Audio-only: Rename temp file to match video title
+            console.print(
+                f"[bold green]✅ Audio-only download complete: {audio_path}[/bold green]"
+            )
+
+            if audio_path:
+                # 🧼 Sanitize title for final filename
+                sanitized_title = "".join(
+                    c for c in stream_handler.title if c.isalnum() or c in " _-"
+                ).rstrip()
+
+                final_audio_path = f"{sanitized_title}{os.path.splitext(audio_path)[1]}"
+                logger.info(
+                    "Renaming audio file: %s → %s", audio_path, final_audio_path
+                )
+                os.rename(audio_path, final_audio_path)
+
+                logger.info("✅ Audio-only file saved as: %s", final_audio_path)
+                console.print(
+                    f"[bold green]🎧 Renamed to: [underline]{final_audio_path}[/underline][/bold green]"
+                )
 
     except KeyboardInterrupt:
         # Gracefully handle Ctrl+C
@@ -92,7 +127,18 @@ if __name__ == "__main__":
         )
         try:
             # Try cleaning up temp files — if they exist
-            cleanup("temp_video.mp4", "temp_audio.mp4")
+            cleanup(
+                (
+                    video_path
+                    if "video_path" in locals() and video_path
+                    else "temp_video.mp4"
+                ),
+                (
+                    audio_path
+                    if "audio_path" in locals() and audio_path
+                    else "temp_audio.mp4"
+                ),
+            )
         except Exception as KI:
             # pass  # Ignore errors like missing files or permission issues
             logger.warning(f"Cleanup Failed: {KI}")
