@@ -1,14 +1,15 @@
-import os
-import subprocess
-import re
 import json
+import os
+import re
+import subprocess
+
 from rich.console import Console
 from rich.progress import (
-    Progress,
     BarColumn,
+    Progress,
+    SpinnerColumn,
     TextColumn,
     TimeRemainingColumn,
-    SpinnerColumn,
 )
 
 console = Console()
@@ -56,6 +57,9 @@ def merge_streams(video_path, audio_path, title):
     if video_ext == ".webm" and audio_ext == ".webm":
         output_ext = ".webm"
         copy_both = True
+    elif video_ext == ".mp4" and audio_ext == ".mp4":
+        output_ext = ".mp4"
+        copy_both = True
     else:
         output_ext = ".mp4"
         copy_both = False
@@ -79,7 +83,7 @@ def merge_streams(video_path, audio_path, title):
         # 🧠 Use stream copy for video — always copy since we don't re-encode video
         "-c:v",
         "copy",
-        # 🎵 Use stream copy for audio *only if both streams are .webm*
+        # 🎵 Use stream copy for audio *only if both streams have the same compatible format*
         # Otherwise, re-encode audio to AAC (for compatibility with .mp4)
         "-c:a",
         "copy" if copy_both else "aac",
